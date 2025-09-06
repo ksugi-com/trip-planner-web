@@ -1,5 +1,37 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## 環境設定
+
+このプロジェクトを実行するには、以下の環境変数を設定する必要があります。
+
+`.env.local` ファイルをプロジェクトルートに作成し、以下の内容を追加してください：
+
+```env
+# Firebase 設定
+NEXT_PUBLIC_FIREBASE_API_KEY=your_api_key_here
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project_id.firebaseapp.com
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project_id.appspot.com
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+NEXT_PUBLIC_FIREBASE_APP_ID=your_app_id
+
+# Google Maps API キー
+NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=your_google_maps_api_key
+```
+
+### Firebase プロジェクトの設定
+
+1. [Firebase Console](https://console.firebase.google.com/) でプロジェクトを作成
+2. Authentication を有効化（Google プロバイダーを設定）
+3. Firestore Database を作成
+4. プロジェクト設定から Web アプリの設定値を取得
+
+### Google Maps API の設定
+
+1. [Google Cloud Console](https://console.cloud.google.com/) でプロジェクトを作成
+2. Maps JavaScript API を有効化
+3. API キーを作成
+
 ## Getting Started
 
 First, run the development server:
