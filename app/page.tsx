@@ -112,10 +112,6 @@ export default function Home() {
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Trip Planner</h1>
-          {/* ★ 認証デバッグ（uid/email を軽く表示） */}
-          <p className="text-xs text-gray-500 mt-1">
-            {user ? `uid: ${user.uid} / ${user.email ?? "no-email"}` : "未ログイン"}
-          </p>
         </div>
 
         {!user ? (
