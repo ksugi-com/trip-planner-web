@@ -8,6 +8,8 @@ type Props = { bookmarks: Bookmark[] };
 export default function PlanGenerator({ bookmarks }: Props) {
   const [days, setDays] = useState(2);
   const [transport, setTransport] = useState<"walk" | "public">("public");
+  const [startTime, setStartTime] = useState("09:00");
+  const [endTime, setEndTime] = useState("17:00");
   const [loading, setLoading] = useState(false);
   const [planText, setPlanText] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -24,6 +26,14 @@ export default function PlanGenerator({ bookmarks }: Props) {
       setError("日数は1以上で指定してください。");
       return;
     }
+    if (!/^\d{2}:\d{2}$/.test(startTime) || !/^\d{2}:\d{2}$/.test(endTime)) {
+      setError("時刻は HH:MM 形式で指定してください。");
+      return;
+    }
+    if (startTime >= endTime) {
+      setError("開始時刻は終了時刻より前にしてください。");
+      return;
+    }
 
     setLoading(true);
     try {
@@ -33,6 +43,8 @@ export default function PlanGenerator({ bookmarks }: Props) {
         body: JSON.stringify({
           days,
           transport,
+          startTime,
+          endTime,
           spots: bookmarks.map(b => ({ name: b.name, lat: b.lat, lng: b.lng })),
         }),
       });
@@ -43,7 +55,7 @@ export default function PlanGenerator({ bookmarks }: Props) {
         return;
       }
 
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json().catch(() => ({} as any));
       if (!data?.plan) {
         setError("プランの生成に失敗しました。（planが空）");
         return;
@@ -58,7 +70,7 @@ export default function PlanGenerator({ bookmarks }: Props) {
 
   return (
     <div className="w-full border rounded-lg p-3 space-y-3">
-      <h2 className="font-semibold">プラン生成（LLM）</h2>
+      <h2 className="font-semibold">プラン生成（全日程/LLM）</h2>
 
       <div className="flex flex-wrap items-center gap-3">
         <label className="text-sm">日数</label>
@@ -80,6 +92,22 @@ export default function PlanGenerator({ bookmarks }: Props) {
           <option value="public">公共交通/車前提</option>
           <option value="walk">徒歩中心</option>
         </select>
+
+        <label className="text-sm">開始</label>
+        <input
+          type="time"
+          value={startTime}
+          onChange={(e) => setStartTime(e.target.value)}
+          className="border p-2 rounded"
+        />
+
+        <label className="text-sm">終了</label>
+        <input
+          type="time"
+          value={endTime}
+          onChange={(e) => setEndTime(e.target.value)}
+          className="border p-2 rounded"
+        />
 
         <button
           onClick={handleGenerate}

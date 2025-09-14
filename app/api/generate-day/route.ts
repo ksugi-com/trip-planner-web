@@ -7,13 +7,18 @@ type Spot = { name: string; lat: number; lng: number };
 
 export async function POST(req: NextRequest) {
   try {
-    const { transport, spots } = (await req.json()) as {
+    const { transport, startTime, endTime, spots } = (await req.json()) as {
       transport: "walk" | "public";
+      startTime: string; // "HH:MM"
+      endTime: string;   // "HH:MM"
       spots: Spot[];
     };
 
     if (!Array.isArray(spots) || spots.length === 0) {
       return NextResponse.json({ error: "spots が空です。" }, { status: 400 });
+    }
+    if (!/^\d{2}:\d{2}$/.test(startTime) || !/^\d{2}:\d{2}$/.test(endTime) || startTime >= endTime) {
+      return NextResponse.json({ error: "時刻指定が不正です。" }, { status: 400 });
     }
 
     const apiKey = process.env.OPENAI_API_KEY;
@@ -24,35 +29,25 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ✅ 「出せる範囲だけ、無ければスキップ」を明示
     const system =
       "あなたは旅行プランナーです。入力されたスポットのみを使って、その日の実行可能な行程案を日本語で作成します。" +
-      "情報が不足している項目は無理に推測せずスキップしてください（'不明'や空欄を埋めない）。" +
-      "回答は読みやすい Markdown で、冗長になりすぎないように。";
-
-    const sectionsGuidance =
-      "- 1. 食事・カフェ情報（地元人気・名物、休憩スポット、ランチ/ディナー候補を時間帯に合わせて複数）\n" +
-      "- 2. 滞在時間・モデルルート（各スポットの平均滞在時間、午前/午後のモデルスケジュール）\n" +
-      "- 3. 観光・体験ポイント（見どころ、体験アクティビティ）\n" +
-      "- 4. 実用情報（移動手段の選択肢、混雑目安、費用目安）\n" +
-      "- 5. 季節・天候アドバイス（季節のおすすめ、雨の日の代替案）";
+      "開始〜終了の時間帯はユーザー指定を厳守してください。移動のひとこと（徒歩/公共交通）を含め、" +
+      "補足情報（出せる範囲で）：食事/カフェ、滞在時間・モデルルート、見どころ/体験、実用情報（移動/混雑/費用）、季節/天候アドバイス。" +
+      "回答は読みやすいMarkdownで。";
 
     const user =
       `対象日: 1日\n` +
       `移動手段の想定: ${transport === "walk" ? "徒歩中心" : "公共交通/車"}\n` +
+      `この日の時間帯: ${startTime}〜${endTime}\n` +
       `訪問スポット（順不同）:\n` +
       spots.map((s, i) => `  ${i + 1}. ${s.name} (${s.lat}, ${s.lng})`).join("\n") +
-      `\n\n要件:\n` +
-      `- 指定スポットのみを使う。\n` +
-      `- 地理的な近さを意識して効率的な順番にする。\n` +
-      `- 情報が無い補足はスキップ可（無理に埋めない）。\n` +
-      `- 出力フォーマット（Markdown）:\n` +
+      `\n\n出力フォーマット（Markdown）例:\n` +
       `## 日1 行程\n` +
-      `- 時間目安: 09:00〜17:00\n` +
+      `- 時間目安: ${startTime}〜${endTime}\n` +
       `- ルート: A → B → C\n` +
-      `- メモ: 移動のひとこと（徒歩/公共交通）\n\n` +
+      `- メモ: ...\n\n` +
       `## 補足情報（出せる範囲で）\n` +
-      sectionsGuidance;
+      `- 食事・カフェ情報\n- 滞在時間・モデルルート\n- 観光・体験ポイント\n- 実用情報（移動/混雑/費用）\n- 季節・天候アドバイス`;
 
     const resp = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",

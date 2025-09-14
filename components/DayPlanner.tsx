@@ -2,53 +2,53 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { User } from "firebase/auth";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
-import { db } from "../firebase/client";
 import type { Bookmark } from "./BookmarkList";
 
 type DaySpot = { bookmarkId: string; name: string; lat: number; lng: number; order: number };
 type DayPlan = { day: number; spots: DaySpot[] };
+type DayTime = { startTime: string; endTime: string };
 
 export default function DayPlanner({
-  user,
+  user, // 使わないがシグネチャ互換のため残す
   bookmarks,
 }: {
   user: User;
   bookmarks: Bookmark[];
 }) {
-  const [title, setTitle] = useState("マイプラン");
   const [days, setDays] = useState(2);
   const [selectedDay, setSelectedDay] = useState(1);
   const [scheduleMap, setScheduleMap] = useState<Record<number, DayPlan>>({});
-
-  // ★ 追加：日ごとの生成結果を保持する（キー=day, 値=生成テキスト）
   const [generatedMap, setGeneratedMap] = useState<Record<number, string>>({});
   const [transport, setTransport] = useState<"walk" | "public">("public");
-  const [genLoading, setGenLoading] = useState(false);
-  const [genError, setGenError] = useState<string | null>(null);
 
-  // daysの変更に応じて枠を整える
+  // ★ 追加：各日の時間帯（デフォルト 09:00–17:00）
+  const [timesMap, setTimesMap] = useState<Record<number, DayTime>>({
+    1: { startTime: "09:00", endTime: "17:00" },
+    2: { startTime: "09:00", endTime: "17:00" },
+  });
+
+  // days 変更時に枠を整える（プラン枠 & 時刻枠 & 生成結果枠）
   useEffect(() => {
+    // プラン枠
     setScheduleMap((prev) => {
       const next: Record<number, DayPlan> = { ...prev };
-      for (let d = 1; d <= days; d++) {
-        if (!next[d]) next[d] = { day: d, spots: [] };
-      }
-      // 余剰日を削除
-      Object.keys(next).forEach((k) => {
-        const d = Number(k);
-        if (d > days) delete next[d];
-      });
+      for (let d = 1; d <= days; d++) if (!next[d]) next[d] = { day: d, spots: [] };
+      Object.keys(next).forEach((k) => Number(k) > days && delete next[Number(k)]);
       if (selectedDay > days) setSelectedDay(1);
       return next;
     });
-
-    // 生成結果の余剰日も削除
+    // 時刻枠
+    setTimesMap((prev) => {
+      const next: Record<number, DayTime> = { ...prev };
+      for (let d = 1; d <= days; d++)
+        if (!next[d]) next[d] = { startTime: "09:00", endTime: "17:00" };
+      Object.keys(next).forEach((k) => Number(k) > days && delete next[Number(k)]);
+      return next;
+    });
+    // 生成結果枠
     setGeneratedMap((prev) => {
       const next: Record<number, string> = {};
-      for (let d = 1; d <= days; d++) {
-        if (prev[d]) next[d] = prev[d];
-      }
+      for (let d = 1; d <= days; d++) if (prev[d]) next[d] = prev[d];
       return next;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -56,74 +56,54 @@ export default function DayPlanner({
 
   const dayList = useMemo(() => Array.from({ length: days }, (_, i) => i + 1), [days]);
   const currentDayPlan = scheduleMap[selectedDay] ?? { day: selectedDay, spots: [] };
+  const currentTime = timesMap[selectedDay] ?? { startTime: "09:00", endTime: "17:00" };
 
+  // --- 操作系 ---
   const addToDay = (b: Bookmark) => {
     setScheduleMap((prev) => {
       const target = prev[selectedDay] ?? { day: selectedDay, spots: [] };
-      const exists = target.spots.some((s) => s.bookmarkId === b.id);
-      if (exists) return prev; // 同一日への重複追加を防止（必要なら許容でもOK）
+      if (target.spots.some((s) => s.bookmarkId === b.id)) return prev;
       const order = target.spots.length + 1;
-      const added: DaySpot = {
-        bookmarkId: b.id,
-        name: b.name,
-        lat: b.lat,
-        lng: b.lng,
-        order,
-      };
+      const added: DaySpot = { bookmarkId: b.id, name: b.name, lat: b.lat, lng: b.lng, order };
       return { ...prev, [selectedDay]: { ...target, spots: [...target.spots, added] } };
     });
   };
 
   const removeFromDay = (bookmarkId: string) => {
     setScheduleMap((prev) => {
-      const target = prev[selectedDay] ?? { day: selectedDay, spots: [] };
-      const filtered = target.spots
-        .filter((s) => s.bookmarkId !== bookmarkId)
+      const t = prev[selectedDay] ?? { day: selectedDay, spots: [] };
+      const filtered = t.spots.filter((s) => s.bookmarkId !== bookmarkId)
         .map((s, i) => ({ ...s, order: i + 1 }));
-      return { ...prev, [selectedDay]: { ...target, spots: filtered } };
+      return { ...prev, [selectedDay]: { ...t, spots: filtered } };
     });
   };
 
   const moveUp = (idx: number) => {
     setScheduleMap((prev) => {
-      const target = prev[selectedDay] ?? { day: selectedDay, spots: [] };
+      const t = prev[selectedDay] ?? { day: selectedDay, spots: [] };
       if (idx <= 0) return prev;
-      const arr = [...target.spots];
+      const arr = [...t.spots];
       [arr[idx - 1], arr[idx]] = [arr[idx], arr[idx - 1]];
       const normalized = arr.map((s, i) => ({ ...s, order: i + 1 }));
-      return { ...prev, [selectedDay]: { ...target, spots: normalized } };
+      return { ...prev, [selectedDay]: { ...t, spots: normalized } };
     });
   };
 
   const moveDown = (idx: number) => {
     setScheduleMap((prev) => {
-      const target = prev[selectedDay] ?? { day: selectedDay, spots: [] };
-      if (idx >= target.spots.length - 1) return prev;
-      const arr = [...target.spots];
+      const t = prev[selectedDay] ?? { day: selectedDay, spots: [] };
+      if (idx >= t.spots.length - 1) return prev;
+      const arr = [...t.spots];
       [arr[idx + 1], arr[idx]] = [arr[idx], arr[idx + 1]];
       const normalized = arr.map((s, i) => ({ ...s, order: i + 1 }));
-      return { ...prev, [selectedDay]: { ...target, spots: normalized } };
+      return { ...prev, [selectedDay]: { ...t, spots: normalized } };
     });
   };
 
-  const savePlan = async () => {
-    if (!user) return alert("ログインしてください");
-    // Firestoreへ保存する際に、各日の生成結果も一緒に保存（planText）
-    const schedule = dayList.map((d) => ({
-      day: d,
-      spots: (scheduleMap[d]?.spots ?? []),
-      planText: generatedMap[d] ?? "", // ★ 生成済みがあれば保存
-    }));
-    const ref = await addDoc(collection(db, "users", user.uid, "plans"), {
-      title,
-      days,
-      schedule,
-      createdAt: serverTimestamp(),
-    });
-    alert(`プランを保存しました（id: ${ref.id}）`);
-  };
+  // --- 生成 ---
+  const [genLoading, setGenLoading] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
 
-  // この日のプランを LLM で生成 → その日のエリアにだけ反映、generatedMap に蓄積
   const generateThisDay = async () => {
     setGenError(null);
     const spots = (scheduleMap[selectedDay]?.spots ?? []).map((s) => ({
@@ -131,9 +111,13 @@ export default function DayPlanner({
       lat: s.lat,
       lng: s.lng,
     }));
-
     if (spots.length === 0) {
-      setGenError("この日に割り当てられたスポットがありません。ブックマーク一覧から追加してください。");
+      setGenError("この日に割り当てられたスポットがありません。ブックマークから追加してください。");
+      return;
+    }
+    const { startTime, endTime } = currentTime;
+    if (!/^\d{2}:\d{2}$/.test(startTime) || !/^\d{2}:\d{2}$/.test(endTime) || startTime >= endTime) {
+      setGenError("時刻指定が不正です（開始は終了より前、形式は HH:MM）。");
       return;
     }
 
@@ -142,7 +126,7 @@ export default function DayPlanner({
       const res = await fetch("/api/generate-day", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transport, spots }),
+        body: JSON.stringify({ transport, startTime, endTime, spots }),
       });
       if (!res.ok) {
         const text = await res.text().catch(() => "");
@@ -151,7 +135,6 @@ export default function DayPlanner({
       }
       const data = await res.json();
       const text = data.plan ?? "生成に失敗しました。";
-      // ★ ここがポイント：選択中の日だけを書き換え、他の日の結果は保持
       setGeneratedMap((prev) => ({ ...prev, [selectedDay]: text }));
     } catch (e: any) {
       setGenError(`通信エラー: ${e?.message ?? String(e)}`);
@@ -160,20 +143,13 @@ export default function DayPlanner({
     }
   };
 
+  // --- UI ---
   return (
     <div className="w-full border rounded-lg p-3 space-y-4">
       <h2 className="font-semibold">日別プラン編集</h2>
 
-      {/* 上部操作列 */}
+      {/* 上部操作列（保存ボタンは削除済み） */}
       <div className="flex flex-wrap items-center gap-3">
-        <label className="text-sm">プラン名</label>
-        <input
-          type="text"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          className="border p-2 rounded w-60"
-        />
-
         <label className="text-sm">日数</label>
         <input
           type="number"
@@ -195,9 +171,42 @@ export default function DayPlanner({
           ))}
         </select>
 
-        <button onClick={savePlan} className="px-3 py-2 rounded bg-emerald-600 text-white">
-          プランを保存
-        </button>
+        <label className="text-sm">移動手段</label>
+        <select
+          value={transport}
+          onChange={(e) => setTransport(e.target.value as "walk" | "public")}
+          className="border p-2 rounded"
+        >
+          <option value="public">公共交通/車前提</option>
+          <option value="walk">徒歩中心</option>
+        </select>
+
+        {/* ★ 各日ごとの時間帯設定 */}
+        <label className="text-sm">開始</label>
+        <input
+          type="time"
+          value={currentTime.startTime}
+          onChange={(e) =>
+            setTimesMap((prev) => ({
+              ...prev,
+              [selectedDay]: { ...currentTime, startTime: e.target.value },
+            }))
+          }
+          className="border p-2 rounded"
+        />
+
+        <label className="text-sm">終了</label>
+        <input
+          type="time"
+          value={currentTime.endTime}
+          onChange={(e) =>
+            setTimesMap((prev) => ({
+              ...prev,
+              [selectedDay]: { ...currentTime, endTime: e.target.value },
+            }))
+          }
+          className="border p-2 rounded"
+        />
       </div>
 
       {/* ブックマークリスト（クリックで追加） */}
@@ -219,7 +228,7 @@ export default function DayPlanner({
         </div>
       </div>
 
-      {/* 選択日の並び（並び替え＆削除可） */}
+      {/* 選択日の並び（並び替え＆削除） */}
       <div className="space-y-2">
         <h3 className="font-medium text-sm">{selectedDay}日目の順番</h3>
         {currentDayPlan.spots.length === 0 ? (
@@ -233,29 +242,9 @@ export default function DayPlanner({
                   {s.name}
                 </div>
                 <div className="flex gap-2">
-                  <button
-                    className="px-2 py-1 rounded border"
-                    onClick={() => moveUp(idx)}
-                    disabled={idx === 0}
-                    title="上へ"
-                  >
-                    ↑
-                  </button>
-                  <button
-                    className="px-2 py-1 rounded border"
-                    onClick={() => moveDown(idx)}
-                    disabled={idx === currentDayPlan.spots.length - 1}
-                    title="下へ"
-                  >
-                    ↓
-                  </button>
-                  <button
-                    className="px-2 py-1 rounded bg-red-500 text-white"
-                    onClick={() => removeFromDay(s.bookmarkId)}
-                    title="削除"
-                  >
-                    削除
-                  </button>
+                  <button className="px-2 py-1 rounded border" onClick={() => moveUp(idx)} disabled={idx === 0}>↑</button>
+                  <button className="px-2 py-1 rounded border" onClick={() => moveDown(idx)} disabled={idx === currentDayPlan.spots.length - 1}>↓</button>
+                  <button className="px-2 py-1 rounded bg-red-500 text-white" onClick={() => removeFromDay(s.bookmarkId)}>削除</button>
                 </div>
               </li>
             ))}
@@ -267,22 +256,12 @@ export default function DayPlanner({
       <div className="space-y-2">
         <h3 className="font-medium text-sm">この日のプランを生成</h3>
         <div className="flex flex-wrap items-center gap-3">
-          <label className="text-sm">移動手段</label>
-          <select
-            value={transport}
-            onChange={(e) => setTransport(e.target.value as "walk" | "public")}
-            className="border p-2 rounded"
-          >
-            <option value="public">公共交通/車前提</option>
-            <option value="walk">徒歩中心</option>
-          </select>
-
           <button
             onClick={generateThisDay}
             disabled={genLoading}
             className="px-3 py-2 rounded bg-indigo-600 text-white disabled:opacity-50"
           >
-            {genLoading ? "生成中..." : `「${selectedDay}日目」のプランを生成`}
+            {genLoading ? "生成中..." : `「${selectedDay}日目」を生成（${currentTime.startTime}〜${currentTime.endTime}）`}
           </button>
         </div>
 
@@ -293,12 +272,14 @@ export default function DayPlanner({
         )}
       </div>
 
-      {/* ★ 追加：生成結果一覧（全日分を保持・表示） */}
+      {/* 生成結果一覧（全日） */}
       <div className="space-y-2">
         <h3 className="font-medium text-sm">生成結果（すべての対象日）</h3>
         {dayList.map((d) => (
           <div key={d} className="border rounded p-2 bg-gray-50">
-            <div className="text-sm font-semibold mb-1">{d}日目</div>
+            <div className="text-sm font-semibold mb-1">
+              {d}日目 <span className="text-gray-500">（{(timesMap[d]?.startTime ?? "09:00")}〜{(timesMap[d]?.endTime ?? "17:00")}）</span>
+            </div>
             {generatedMap[d] ? (
               <pre className="whitespace-pre-wrap text-sm">{generatedMap[d]}</pre>
             ) : (
