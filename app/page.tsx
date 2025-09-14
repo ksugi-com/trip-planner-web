@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { GoogleMap, Marker, useJsApiLoader } from "@react-google-maps/api";
 import {
   GoogleAuthProvider,
   onAuthStateChanged,
-  signInWithRedirect, // ← COOP対策としてリダイレクト推奨
-  getRedirectResult,
+  signInWithPopup,   // ← ここを Popup に
   signOut,
 } from "firebase/auth";
 import { addDoc, collection, onSnapshot } from "firebase/firestore";
@@ -23,29 +22,35 @@ export default function Home() {
   const { isLoaded } = useJsApiLoader({
     id: "google-map",
     googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "",
-    // ★ Legacy回避のため "places" ライブラリは読み込まない（RESTで完結）
     version: "weekly",
   });
 
   const [user, setUser] = useState<any>(null);
+  const [authReady, setAuthReady] = useState(false); // ★ 追加
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, setUser);
-    // リダイレクト結果の回収（エラー時の可視化）
-    getRedirectResult(auth).catch((e) => console.warn("redirect auth error:", e));
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setAuthReady(true);
+      // デバッグ：console.log("onAuthStateChanged:", u?.uid);
+    });
     return () => unsub();
   }, []);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setBookmarks([]);
+      return;
+    }
     const unsub = onSnapshot(
       collection(db, "users", user.uid, "bookmarks"),
       (snap) => {
         setBookmarks(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
-      }
+      },
+      (err) => console.error("bookmark onSnapshot error:", err)
     );
     return () => unsub();
   }, [user]);
@@ -76,47 +81,64 @@ export default function Home() {
   };
 
   const handleLogin = async () => {
-    const provider = new GoogleAuthProvider();
-    await signInWithRedirect(auth, provider);
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider); // ★ ポップアップ方式
+    } catch (e) {
+      console.error("login error:", e);
+      alert("Googleログインに失敗しました。Console ログを確認してください。");
+    }
   };
-  const handleLogout = async () => signOut(auth);
+
+  const handleLogout = async () => {
+    await signOut(auth);
+    setSelected(null);
+    setName("");
+    setBookmarks([]);
+  };
 
   const canSave = !!user && !!(selected && name);
+
+  if (!authReady) {
+    return (
+      <main className="mx-auto max-w-5xl p-4">
+        <p className="text-gray-600">ログイン状態を確認しています...</p>
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto max-w-5xl p-4 space-y-4">
       <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Trip Planner</h1>
+        <div>
+          <h1 className="text-2xl font-bold">Trip Planner</h1>
+          {/* ★ 認証デバッグ（uid/email を軽く表示） */}
+          <p className="text-xs text-gray-500 mt-1">
+            {user ? `uid: ${user.uid} / ${user.email ?? "no-email"}` : "未ログイン"}
+          </p>
+        </div>
+
         {!user ? (
-          <button
-            onClick={handleLogin}
-            className="px-3 py-2 rounded bg-blue-600 text-white"
-          >
+          <button onClick={handleLogin} className="px-3 py-2 rounded bg-blue-600 text-white">
             Googleでログイン
           </button>
         ) : (
           <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-700">
-              ログイン中: {user.displayName}
-            </span>
-            <button
-              onClick={handleLogout}
-              className="px-3 py-2 rounded bg-gray-600 text-white"
-            >
+            <span className="text-sm text-gray-700">ログイン中: {user.displayName}</span>
+            <button onClick={handleLogout} className="px-3 py-2 rounded bg-gray-600 text-white">
               ログアウト
             </button>
           </div>
         )}
       </header>
 
-      {/* ★ New Places (REST) 検索ボックス */}
+      {/* 検索 → 保存 */}
       <div className="flex gap-2">
         <NewPlacesSearch
           onPick={({ name, lat, lng }) => {
             setName(name);
             setSelected({ lat, lng });
           }}
-          // 例：日本に限定
           languageCode="ja"
           regionCode="JP"
         />
@@ -133,7 +155,7 @@ export default function Home() {
       </div>
 
       <div className="grid md:grid-cols-2 gap-4">
-        {/* 左：地図 + 追加フォーム */}
+        {/* 左：地図 */}
         <div className="space-y-3">
           {isLoaded && (
             <GoogleMap
@@ -160,11 +182,7 @@ export default function Home() {
               />
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <span>選択中:</span>
-                <span>
-                  {selected
-                    ? `${selected.lat.toFixed(4)}, ${selected.lng.toFixed(4)}`
-                    : "—"}
-                </span>
+                <span>{selected ? `${selected.lat.toFixed(4)}, ${selected.lng.toFixed(4)}` : "—"}</span>
               </div>
               <button
                 onClick={handleSave}
@@ -179,21 +197,16 @@ export default function Home() {
           )}
         </div>
 
-        {/* 右：リスト & プラン生成 */}
+        {/* 右：機能 */}
         <div className="space-y-3">
           {user ? (
             <>
-              <BookmarkList
-                user={user}
-                onFocus={(b) => setSelected({ lat: b.lat, lng: b.lng })}
-              />
+              <BookmarkList user={user} onFocus={(b) => setSelected({ lat: b.lat, lng: b.lng })} />
               <DayPlanner user={user} bookmarks={bookmarks} />
-              <PlanGenerator bookmarks={bookmarks} />
+              <PlanGenerator />
             </>
           ) : (
-            <p className="text-gray-600">
-              ログインするとブックマークリストとプラン生成が使えます。
-            </p>
+            <p className="text-gray-600">ログインするとブックマークリストとプラン生成が使えます。</p>
           )}
         </div>
       </div>

@@ -167,7 +167,7 @@ export default function DayPlanner({
           className="border p-2 rounded"
         >
           {dayList.map((d) => (
-            <option key={d} value={d}>{`日 ${d}`}</option>
+            <option key={d} value={d}>{`${d}日目`}</option>
           ))}
         </select>
 

@@ -1,6 +1,5 @@
-// firebase/client.ts
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { getAuth, setPersistence, browserLocalPersistence } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -12,11 +11,13 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// 既に初期化済みなら getApp() を利用 → 重複初期化エラー回避
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
-export const db = getFirestore(app, "default");
-export { app };
+// ★ 永続化（redirect/popup後も確実に復元）
+setPersistence(auth, browserLocalPersistence).catch((e) =>
+  console.warn("Auth persistence set failed:", e)
+);
 
+export const db = getFirestore(app);
 
