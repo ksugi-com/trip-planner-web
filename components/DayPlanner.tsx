@@ -146,11 +146,11 @@ export default function DayPlanner({
   // --- UI ---
   return (
     <div className="w-full border rounded-lg p-3 space-y-4">
-      <h2 className="font-semibold">日別プラン編集</h2>
+      <h2 className="font-semibold">日別プラン生成</h2>
 
       {/* 上部操作列（保存ボタンは削除済み） */}
       <div className="flex flex-wrap items-center gap-3">
-        <label className="text-sm">日数</label>
+        <label className="text-sm">総日数</label>
         <input
           type="number"
           min={1}
@@ -160,7 +160,7 @@ export default function DayPlanner({
           className="border p-2 rounded w-24"
         />
 
-        <label className="text-sm">閲覧日</label>
+        <label className="text-sm">生成日</label>
         <select
           value={selectedDay}
           onChange={(e) => setSelectedDay(parseInt(e.target.value, 10))}

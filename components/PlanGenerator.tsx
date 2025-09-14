@@ -70,7 +70,7 @@ export default function PlanGenerator({ bookmarks }: Props) {
 
   return (
     <div className="w-full border rounded-lg p-3 space-y-3">
-      <h2 className="font-semibold">プラン生成（全日程/LLM）</h2>
+      <h2 className="font-semibold">全日程プラン生成</h2>
 
       <div className="flex flex-wrap items-center gap-3">
         <label className="text-sm">日数</label>
