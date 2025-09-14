@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-type Bookmark = { id: string; name: string; lat: number; lng: number };
+export type Bookmark = { id: string; name: string; lat: number; lng: number };
 type Props = { bookmarks: Bookmark[] };
 
 export default function PlanGenerator({ bookmarks }: Props) {
@@ -27,16 +27,16 @@ export default function PlanGenerator({ bookmarks }: Props) {
 
     setLoading(true);
     try {
-      // API に渡す形を必要最小限に整形
-      const spots = bookmarks.map((b) => ({ name: b.name, lat: b.lat, lng: b.lng }));
-
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ days, transport, spots }),
+        body: JSON.stringify({
+          days,
+          transport,
+          spots: bookmarks.map(b => ({ name: b.name, lat: b.lat, lng: b.lng })),
+        }),
       });
 
-      // ステータスで分岐して詳細エラーを表示
       if (!res.ok) {
         const text = await res.text().catch(() => "");
         setError(`生成エラー (${res.status}): ${text || "原因不明"}`);
@@ -48,10 +48,9 @@ export default function PlanGenerator({ bookmarks }: Props) {
         setError("プランの生成に失敗しました。（planが空）");
         return;
       }
-
       setPlanText(data.plan);
     } catch (e: any) {
-      setError(`通信エラー: ${e?.message ?? e}`);
+      setError(`通信エラー: ${e?.message ?? String(e)}`);
     } finally {
       setLoading(false);
     }
@@ -105,4 +104,3 @@ export default function PlanGenerator({ bookmarks }: Props) {
     </div>
   );
 }
-
